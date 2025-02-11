@@ -9,7 +9,7 @@
           :class="message.role"
       >
         <div class="bubble">
-          <div class="content">{{ message.content }}</div>
+          <div class="content" v-html="message.content"></div>
           <div v-if="message.role === 'assistant'" class="typing-indicator" v-show="isLoading">
             <span></span><span></span><span></span>
           </div>
@@ -34,7 +34,7 @@
 
 <script setup lang="ts">
 import { ref, nextTick, onMounted } from 'vue'
-import {Chat} from "../../wailsjs/go/main/App";
+import { Chat, HistoryChat } from "../../wailsjs/go/main/App"; // 引入HistoryChat接口
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -56,14 +56,6 @@ const scrollToBottom = () => {
   })
 }
 
-// 模拟 API 调用（替换为实际的后端接口）
-const fetchAIResponse = async (prompt: string): Promise<string> => {
-  // 这里应该替换为实际的后端接口调用
-  // 示例使用模拟延迟
-  await new Promise(resolve => setTimeout(resolve, 1000))
-  return `这是 AI 的回复，针对："${prompt}"`
-}
-const aiResponse = ref()
 // 发送消息处理
 const sendMessage = async () => {
   const content = inputText.value.trim()
@@ -97,11 +89,31 @@ const sendMessage = async () => {
 }
 
 // 初始化示例对话
-onMounted(() => {
-  messages.value.push({
-    role: 'assistant',
-    content: '您好！我是 AI 助手，有什么可以帮您？'
-  })
+onMounted(async () => {
+  try {
+    // 假设有一个sessionID，这里使用一个示例值
+    const sessionID = "test_session3";
+    // 调用HistoryChat接口获取历史聊天记录
+    const historyConversation = await HistoryChat(sessionID);
+    messages.value = historyConversation.map(conversation => ({
+      role: conversation.Role as 'user' | 'assistant',
+      content: conversation.Content
+    }));
+  } catch (error) {
+    console.error('获取历史聊天记录失败:', error);
+    messages.value.push({
+      role: 'assistant',
+      content: '无法加载历史聊天记录，请稍后再试。'
+    });
+  }
+
+  // 如果没有历史消息，添加初始消息
+  if (messages.value.length === 0) {
+    messages.value.push({
+      role: 'assistant',
+      content: '您好！我是 AI 助手，有什么可以帮您？'
+    });
+  }
 })
 </script>
 
@@ -154,7 +166,7 @@ onMounted(() => {
 
 .input-area {
   display: flex;
-  padding: 20px;
+  padding: 16px;
   background: white;
   border-top: 1px solid #eee;
   gap: 10px;

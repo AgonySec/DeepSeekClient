@@ -3,6 +3,8 @@ package main
 import (
 	"DeepSeekClient/backend/chat"
 	"context"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"time"
 )
 
 // App struct
@@ -23,7 +25,40 @@ func (a *App) startup(ctx context.Context) {
 func (a *App) ChatSiliconflow(userInput string) {
 
 }
+func (a *App) Debug(msg string) {
+	runtime.LogDebug(a.ctx, msg)
+}
+func (a *App) Error(msg string) {
+	runtime.LogError(a.ctx, msg)
+}
+
+type Conversation struct {
+	SessionID string
+	Role      string
+	Content   string
+	CreatedAt time.Time
+}
+
+func (a *App) HistoryChat(sessionID string) []chat.Conversation {
+	// 初始化数据库（示例DSN，根据实际情况配置）
+	//defer chat.CloseDB()
+	if err := chat.InitDB("data.db"); err != nil {
+		a.Error(err.Error())
+	}
+	//测试数据
+	history, err := chat.GetConversationHistory(a.ctx, sessionID, 10)
+	if err != nil {
+		a.Error(err.Error())
+	}
+	return history
+}
 func (a *App) Chat(userInput string) string {
-	assistantMessage := chat.Chat(userInput)
+	defer chat.CloseDB()
+
+	// 测试对话
+	assistantMessage, err := chat.ChatDP(a.ctx, "test_session3", userInput)
+	if err != nil {
+		a.Error(err.Error())
+	}
 	return assistantMessage
 }

@@ -19,8 +19,7 @@ import (
  * @description chat
  */
 
-func Chat(userInput string) string {
-
+func Chat(userInput string, conversationID string) string {
 	// 初始化数据库连接
 	if err := db.InitDB(); err != nil {
 		log.Fatalf("初始化数据库失败: %v", err)
@@ -30,21 +29,27 @@ func Chat(userInput string) string {
 		log.Fatalf("获取 API Key 失败: %v", err)
 	}
 	log.Println("apikey=", apiKey)
-	//apiKey := "sk-94119d495ebb4a48a5f21bb35b7115b9"
+
 	// 创建HTTP客户端
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 	}
 
-	// 初始化消息列表
-	messages := []config.Message{
-		{Role: "system", Content: "You are a helpful assistant"},
+	// 读取之前的对话内容
+	//conversationID := "default_conversation" // 这里可以使用更复杂的逻辑来生成或获取conversationID
+	messages, err := db.GetMessagesWithRole(conversationID)
+	if err != nil {
+		log.Fatalf("获取对话内容失败: %v", err)
 	}
-
+	if len(messages) == 0 {
+		messages = []config.Message{
+			{Role: "system", Content: "You are a helpful assistant"}}
+	}
 	// 读取用户输入
 	log.Printf("User: %s", userInput)
 	// 添加用户消息到消息列表
 	messages = append(messages, config.Message{Role: "user", Content: userInput})
+
 	// 构造请求数据
 	requestData := config.ChatCompletionRequest{
 		Model:    "deepseek-chat",
@@ -106,5 +111,11 @@ func Chat(userInput string) string {
 	} else {
 		log.Println("未收到有效响应")
 	}
+
+	// 保存对话内容到数据库
+	if err := db.SaveMessagesWithRole(messages, conversationID); err != nil {
+		log.Fatalf("保存对话内容失败: %v", err)
+	}
+
 	return assistantMessage
 }
