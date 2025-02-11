@@ -8,11 +8,17 @@
           class="message"
           :class="message.role"
       >
+        <div v-if="message.role === 'assistant'" class="avatar" :class="message.role">
+          <img :src=getAvatar(message.role) alt="Avatar" />
+        </div>
         <div class="bubble">
-          <div class="content" v-html="message.content"></div>
-          <div v-if="message.role === 'assistant'" class="typing-indicator" v-show="isLoading">
-            <span></span><span></span><span></span>
-          </div>
+          <div class="content" v-html="toMarkdown(message.content)"></div>
+<!--          <div v-if="message.role === 'assistant'" class="typing-indicator" v-show="isLoading">-->
+<!--            <span></span><span></span><span></span>-->
+<!--          </div>-->
+        </div>
+        <div v-if="message.role === 'user'" class="avatar" :class="message.role">
+          <img :src=getUserAvatar(message.role) alt="Avatar" />
         </div>
       </div>
     </div>
@@ -35,7 +41,7 @@
 <script setup lang="ts">
 import { ref, nextTick, onMounted } from 'vue'
 import { Chat, HistoryChat } from "../../wailsjs/go/main/App"; // 引入HistoryChat接口
-
+import { marked } from 'marked'
 interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
@@ -46,6 +52,11 @@ const messages = ref<ChatMessage[]>([])
 const inputText = ref('')
 const isLoading = ref(false)
 const messagesEnd = ref<HTMLElement | null>(null)
+const toMarkdown = (text: string) => {
+
+  return marked(text);
+}
+
 
 // 自动滚动到底部
 const scrollToBottom = () => {
@@ -91,16 +102,26 @@ const sendMessage = async () => {
 // 初始化示例对话
 onMounted(async () => {
   try {
+    // 添加加载状态消息
+    messages.value.push({ role: 'assistant', content: '加载中...' })
+
     // 假设有一个sessionID，这里使用一个示例值
     const sessionID = "test_session3";
     // 调用HistoryChat接口获取历史聊天记录
     const historyConversation = await HistoryChat(sessionID);
+
+    // 移除加载状态消息
+    messages.value.pop()
+
     messages.value = historyConversation.map(conversation => ({
       role: conversation.Role as 'user' | 'assistant',
       content: conversation.Content
     }));
   } catch (error) {
     console.error('获取历史聊天记录失败:', error);
+    // 移除加载状态消息
+    messages.value.pop()
+
     messages.value.push({
       role: 'assistant',
       content: '无法加载历史聊天记录，请稍后再试。'
@@ -115,6 +136,16 @@ onMounted(async () => {
     });
   }
 })
+
+// 获取头像路径
+function getAvatar(role: 'user' | 'assistant'): string {
+  // 确保路径是正确的，这里假设图片在 assets/images 目录下
+  return role === 'user' ? '/src/assets/images/AgonySec.png' : '/src/assets/images/360.ico'
+}
+function getUserAvatar(role: 'user' | 'assistant'): string {
+  // 确保路径是正确的，这里假设图片在 assets/images 目录下
+  return  role === 'user' ? '/src/assets/images/AgonySec.png' : ''
+}
 </script>
 
 <style scoped>
@@ -134,6 +165,7 @@ onMounted(async () => {
 
 .message {
   display: flex;
+  align-items: flex-start;
 }
 
 .message.user {
@@ -144,11 +176,16 @@ onMounted(async () => {
   justify-content: flex-start;
 }
 
-.bubble {
-  max-width: 70%;
-  padding: 12px 18px;
-  border-radius: 18px;
-  position: relative;
+.avatar {
+  width: 40px;
+  height: 40px;
+
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
 }
 
 .user .bubble {
@@ -162,6 +199,13 @@ onMounted(async () => {
   color: #333;
   border: 1px solid #e0e0e0;
   border-bottom-left-radius: 4px;
+}
+
+.bubble {
+  max-width: 70%;
+  padding: 12px 18px;
+  border-radius: 18px;
+  position: relative;
 }
 
 .input-area {

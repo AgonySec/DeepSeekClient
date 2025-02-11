@@ -40,7 +40,6 @@ type Conversation struct {
 }
 
 func (a *App) HistoryChat(sessionID string) []chat.Conversation {
-	// 初始化数据库（示例DSN，根据实际情况配置）
 	//defer chat.CloseDB()
 	if err := chat.InitDB("data.db"); err != nil {
 		a.Error(err.Error())

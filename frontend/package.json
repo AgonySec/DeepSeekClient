@@ -10,10 +10,12 @@
   },
   "dependencies": {
     "marked": "^15.0.7",
-    "vue": "^3.2.37"
+    "vue": "^3.2.37",
+    "vue-markdown": "^2.2.4"
   },
   "devDependencies": {
     "@babel/types": "^7.18.10",
+    "@types/vue-markdown": "^2.2.4",
     "@vitejs/plugin-vue": "^3.0.3",
     "typescript": "^4.6.4",
     "vite": "^3.0.7",
