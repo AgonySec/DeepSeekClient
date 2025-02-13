@@ -1,5 +1,9 @@
 <template>
+  <el-card class="chat-header">
+    <span>{{title}}</span>
+  </el-card>
   <div class="chat-container">
+
     <!-- 消息展示区域 -->
     <div ref="messagesEnd" class="messages">
       <div
@@ -13,9 +17,6 @@
         </div>
         <div class="bubble">
           <div class="content" v-html="toMarkdown(message.content)"></div>
-<!--          <div v-if="message.role === 'assistant'" class="typing-indicator" v-show="isLoading">-->
-<!--            <span></span><span></span><span></span>-->
-<!--          </div>-->
         </div>
         <div v-if="message.role === 'user'" class="avatar" :class="message.role">
           <img :src=getUserAvatar(message.role) alt="Avatar" />
@@ -39,13 +40,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, onMounted } from 'vue'
-import { Chat, HistoryChat } from "../../wailsjs/go/main/App"; // 引入HistoryChat接口
+import {ref, nextTick, onMounted, watch} from 'vue'
+import {Chat, GetTitle, HistoryChat} from "../../wailsjs/go/main/App"; // 引入HistoryChat接口
 import { marked } from 'marked'
+import {ElNotification} from "element-plus";
 interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
 }
+let props = defineProps(['sessionID'])
 
 // 响应式数据
 const messages = ref<ChatMessage[]>([])
@@ -53,11 +56,17 @@ const inputText = ref('')
 const isLoading = ref(false)
 const messagesEnd = ref<HTMLElement | null>(null)
 const toMarkdown = (text: string) => {
+  scrollToBottom()
 
   return marked(text);
 }
+const title = ref('')
+const getTitle = (sessionID : string) => {
+  GetTitle(sessionID).then(res =>{
 
-
+    title.value = res.data
+  })
+};
 // 自动滚动到底部
 const scrollToBottom = () => {
   nextTick(() => {
@@ -80,10 +89,10 @@ const sendMessage = async () => {
   try {
     isLoading.value = true
     // 添加临时 AI 消息
-    messages.value.push({ role: 'assistant', content: '' })
+    messages.value.push({ role: 'assistant', content: '加载中...' })
 
     // 调用 API
-    const result = await Chat(content)
+    const result = await Chat(content, props.sessionID)
     console.log(result)
     // 更新最后一条消息
     messages.value[messages.value.length - 1].content = result
@@ -100,20 +109,17 @@ const sendMessage = async () => {
 }
 
 // 初始化示例对话
-onMounted(async () => {
+const initializeChat = async (sessionID: string) => {
   try {
-    // 添加加载状态消息
+
     messages.value.push({ role: 'assistant', content: '加载中...' })
 
-    // 假设有一个sessionID，这里使用一个示例值
-    const sessionID = "test_session3";
-    // 调用HistoryChat接口获取历史聊天记录
     const historyConversation = await HistoryChat(sessionID);
-
+    getTitle(sessionID)
     // 移除加载状态消息
     messages.value.pop()
 
-    messages.value = historyConversation.map(conversation => ({
+    messages.value = (historyConversation.data as any[]).map(conversation => ({
       role: conversation.Role as 'user' | 'assistant',
       content: conversation.Content
     }));
@@ -122,10 +128,6 @@ onMounted(async () => {
     // 移除加载状态消息
     messages.value.pop()
 
-    messages.value.push({
-      role: 'assistant',
-      content: '无法加载历史聊天记录，请稍后再试。'
-    });
   }
 
   // 如果没有历史消息，添加初始消息
@@ -135,27 +137,45 @@ onMounted(async () => {
       content: '您好！我是 AI 助手，有什么可以帮您？'
     });
   }
+}
+
+onMounted(() => {
+  initializeChat(props.sessionID)
 })
 
+// 监听 sessionID 的变化
+watch(
+    () => props.sessionID,
+    (newSessionID) => {
+      if (newSessionID) {
+        messages.value = [] // 清空当前消息
+        initializeChat(newSessionID)
+      }
+    }
+)
 // 获取头像路径
 function getAvatar(role: 'user' | 'assistant'): string {
-  // 确保路径是正确的，这里假设图片在 assets/images 目录下
   return role === 'user' ? '/src/assets/images/AgonySec.png' : '/src/assets/images/360.ico'
 }
 function getUserAvatar(role: 'user' | 'assistant'): string {
-  // 确保路径是正确的，这里假设图片在 assets/images 目录下
   return  role === 'user' ? '/src/assets/images/AgonySec.png' : ''
 }
 </script>
 
 <style scoped>
+.chat-header {
+  color: #524f4f;
+  font-weight: bold;
+  height: 9%;
+
+}
 .chat-container {
-  height: 100%;
-  background: #f8f9fa;
+  height: 90%;
+  background: #ffffff;
 }
 
 .messages {
-  height: 80vh;
+  height: 490px;
   overflow-y: auto;
   padding: 20px;
   display: flex;
@@ -179,7 +199,8 @@ function getUserAvatar(role: 'user' | 'assistant'): string {
 .avatar {
   width: 40px;
   height: 40px;
-
+  margin-right: 5px;
+  margin-left: 5px;
 }
 
 .avatar img {
@@ -210,7 +231,7 @@ function getUserAvatar(role: 'user' | 'assistant'): string {
 
 .input-area {
   display: flex;
-  padding: 16px;
+  padding: 10px;
   background: white;
   border-top: 1px solid #eee;
   gap: 10px;

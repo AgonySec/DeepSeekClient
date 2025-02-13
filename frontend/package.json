@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "element-plus": "^2.9.4",
     "marked": "^15.0.7",
     "vue": "^3.2.37",
     "vue-markdown": "^2.2.4"

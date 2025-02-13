@@ -12,6 +12,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -32,8 +33,13 @@ const (
 		content TEXT NOT NULL,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);`
-	createIndexSQL     = "CREATE INDEX IF NOT EXISTS idx_session ON conversations(session_id);"
-	initTimeout        = 5 * time.Second
+	//createIndexSQL   = "CREATE INDEX IF NOT EXISTS idx_session ON conversations(session_id);"
+	createSessionSQL = `CREATE TABLE IF NOT EXISTS sessions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		session_id TEXT NOT NULL,
+		session_title TEXT NOT NULL 
+	);`
+	initTimeout        = 123 * time.Second
 	maxHistoryMessages = 10
 )
 
@@ -73,12 +79,17 @@ func InitDB(dsn string) error {
 			initErr = fmt.Errorf("创建表失败: %w", err)
 			return
 		}
-
-		// 创建索引
-		if _, err := dbInstance.ExecContext(ctx, createIndexSQL); err != nil {
-			initErr = fmt.Errorf("创建索引失败: %w", err)
+		// 创建会话表（如果不存在）
+		if _, err := dbInstance.ExecContext(ctx, createSessionSQL); err != nil {
+			initErr = fmt.Errorf("创建表失败: %w", err)
 			return
 		}
+
+		// 创建索引
+		//if _, err := dbInstance.ExecContext(ctx, createIndexSQL); err != nil {
+		//	initErr = fmt.Errorf("创建索引失败: %w", err)
+		//	return
+		//}
 
 		// 验证数据库连接
 		if err := dbInstance.PingContext(ctx); err != nil {
@@ -88,8 +99,25 @@ func InitDB(dsn string) error {
 	})
 	return initErr
 }
+func SetAPI(ctx context.Context, api string) error {
+	apiKey, err := GetApiKey()
+	if err != nil {
+		log.Printf("获取 api_keys 失败: %v", err)
+		return err
+	}
+	if apiKey != "" {
+		UpdateQuery := "UPDATE api_keys SET key = $1 where id= $2"
+		_, err = dbInstance.ExecContext(ctx, UpdateQuery, api, 1)
+		if err != nil {
+			log.Printf("更新 api_keys 失败: %v", err)
+			return err
+		}
+	}
 
-// Chat 处理对话请求
+	return nil
+}
+
+// ChatDP 处理对话请求
 func ChatDP(ctx context.Context, sessionID, userInput string) (string, error) {
 	// 初始化数据库（示例DSN，根据实际情况配置）
 	if err := InitDB("data.db"); err != nil {
@@ -225,7 +253,65 @@ func GetConversationHistory(ctx context.Context, sessionID string, limit int) ([
 		return nil, fmt.Errorf("遍历记录失败: %w", err)
 	}
 
+	// 查询 sessions 表中的 session_title
+	_, err = GetSessionTitle(ctx, sessionID)
+	//err = dbInstance.QueryRowContext(ctx, sessionTitleQuery, sessionID).Scan(&sessionTitle)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			if len(history) > 0 {
+				log.Println("如果 session_title 不存在，则插入一条新记录")
+				firstContent := history[0].Content
+				insertQuery := "INSERT INTO sessions (session_id, session_title) VALUES (?, ?)"
+				_, err := dbInstance.ExecContext(ctx, insertQuery, sessionID, firstContent)
+				if err != nil {
+					log.Printf("插入 session_title 失败: %v", err)
+				}
+			}
+		} else {
+			return nil, fmt.Errorf("查询 session_title 失败: %w", err)
+		}
+	}
 	return history, nil
+}
+func GetSessionTitle(ctx context.Context, sessionID string) (string, error) {
+	var sessionTitle string
+	sessionTitleQuery := "SELECT session_title FROM sessions WHERE session_id = ?"
+	err := dbInstance.QueryRowContext(ctx, sessionTitleQuery, sessionID).Scan(&sessionTitle)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", err // 如果 session_title 不存在，则返回空字符串
+		}
+		return "", err
+	}
+	return sessionTitle, nil
+}
+func GetSessionList(ctx context.Context) ([]string, error) {
+	var sessionList []string
+	query := "SELECT session_id FROM sessions"
+	rows, err := dbInstance.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("查询失败: %w", err)
+	}
+	for rows.Next() {
+		var sessionID string
+		err := rows.Scan(&sessionID)
+		if err != nil {
+			return nil, fmt.Errorf("扫描记录失败: %w", err)
+		}
+		sessionList = append(sessionList, sessionID)
+	}
+	return sessionList, nil
+}
+func CreateSession(ctx context.Context) (string, error) {
+	var count int
+	err := dbInstance.QueryRowContext(ctx, "SELECT COUNT(*) FROM sessions ").Scan(&count)
+	if err != nil {
+		return "", fmt.Errorf("查询 session_id 失败: %w", err)
+	}
+	newSessionName := "Session" + strconv.Itoa(count)
+	// 插入新记录
+	return newSessionName, nil
+
 }
 
 // saveConversations 批量保存对话记录
@@ -272,14 +358,6 @@ func buildMessages(history []Conversation, currentInput string) []config.Message
 			Content: msg.Content,
 		})
 	}
-	// 添加历史消息（按时间正序）
-	//for i := len(history) - 1; i >= 0; i-- {
-	//	msg := history[i]
-	//	messages = append(messages, config.Message{
-	//		Role:    msg.Role,
-	//		Content: msg.Content,
-	//	})
-	//}
 
 	// 添加当前输入
 	messages = append(messages, config.Message{
@@ -288,45 +366,6 @@ func buildMessages(history []Conversation, currentInput string) []config.Message
 	})
 
 	return messages
-}
-
-// mockAPICall 模拟API调用
-func mockAPICall(ctx context.Context, messages []map[string]string) (string, error) {
-	// 模拟API响应延迟
-	select {
-	case <-time.After(100 * time.Millisecond):
-	case <-ctx.Done():
-		return "", ctx.Err()
-	}
-
-	// 构造模拟响应
-	response := struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}{
-		Choices: []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		}{
-			{
-				Message: struct {
-					Content string `json:"content"`
-				}{
-					Content: "这是模拟的助手回复",
-				},
-			},
-		},
-	}
-
-	if len(response.Choices) == 0 {
-		return "", errors.New("空API响应")
-	}
-
-	return response.Choices[0].Message.Content, nil
 }
 
 // CloseDB 关闭数据库连接
